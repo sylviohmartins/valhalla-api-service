@@ -228,9 +228,9 @@
           </path>
         </annotationProcessorPaths>
         <showWarnings>false</showWarnings>
-        <compilerArgs>
-          <compilerArg>-Amapstruct.unmappedTargetPolicy=WARN</compilerArg>
-        </compilerArgs>
+        <compilerArgs>--enable-preview</compilerArgs>
+        <source>21</source>
+        <target>21</target>
       </configuration>
     </plugin>
 
