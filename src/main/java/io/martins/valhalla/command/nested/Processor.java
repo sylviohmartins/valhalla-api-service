@@ -15,11 +15,11 @@ public interface Processor {
    *                <p>
    *                Exemplo de uso:
    *                <pre>{@code
-   *                                              Processor processA = new ProcessoA();
-   *                                              processA.doProcess(new Context("Dados do Processo A"));
-   *                                              }</pre>
+   *                                                             Processor processA = new ProcessoA();
+   *                                                             processA.doProcess(new Context("Dados do Processo A"));
+   *                                                             }</pre>
    */
-  void doProcess(Context context);
+  void doProcess(Context context) throws Exception;
 
   /**
    * Verifica se o processador suporta a execução no contexto fornecido.

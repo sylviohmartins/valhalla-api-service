@@ -1,76 +1,84 @@
 package io.martins.valhalla.command.nested;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeoutException;
 
 public abstract class BaseCommand {
 
-  private final List<Processor> processors;
+  private final List<Processor> processors = new ArrayList<>();
 
   private final Map<Class<? extends Processor>, CompletableFuture<Void>> dependencyFutures = new ConcurrentHashMap<>();
 
-  public BaseCommand(List<Processor> processors) {
-    this.processors = processors;
+  private ErrorHandler errorHandler;
+
+  public void addProcessors(Processor... processors) {
+    this.processors.addAll(Arrays.asList(processors));
+  }
+
+  public void errorHandler(ErrorHandler errorHandler) {
+    this.errorHandler = errorHandler;
   }
 
   public void run(final Context context) {
-    try (ConcurrentTaskScope<Void> taskScope = new ConcurrentTaskScope<>()) {
-      processors.forEach(processor -> {
-        CompletableFuture<Void> processorFuture = submitProcessorWithDependencies(taskScope, processor, context);
-        dependencyFutures.put(processor.getClass(), processorFuture);  // Mapeia o futuro do processador
-      });
+    try (TaskExecutionScope<Void> taskScope = new TaskExecutionScope<>()) {
+      processors.forEach(processor -> dependencyFutures.put(processor.getClass(), submitProcessorWithDependencies(taskScope, processor, context)));
 
-      // Aguarda a conclusão de todas as tarefas submetidas
-      taskScope.awaitCompletion();
-
-      // Lança exceção em caso de falha em qualquer processador
-      taskScope.throwIfFailed(() -> new RuntimeException("Falha na execução de um ou mais processadores."));
+      taskScope.waitForCompletion();
+      taskScope.throwOnFailure(() -> new RuntimeException("Falha na execução de um ou mais processadores."));
 
     } catch (Throwable e) {
-      e.printStackTrace();
+      handleExecutionError(context, e);
     }
   }
 
-  private CompletableFuture<Void> submitProcessorWithDependencies(ConcurrentTaskScope<Void> taskScope, Processor processor, Context context) {
-    List<Class<? extends Processor>> dependencies = processor.getDependencies();
-
-    if (dependencies.isEmpty()) {
-      // Se não houver dependências, submete o processador diretamente
+  private CompletableFuture<Void> submitProcessorWithDependencies(TaskExecutionScope<Void> taskScope, Processor processor, Context context) {
+    if (processor.getDependencies().isEmpty()) {
       return taskScope.submitTask(() -> executeProcessor(processor, context));
     }
 
-    // Aguarda a conclusão de todas as dependências antes de executar o processador
     return taskScope.submitTask(() -> {
-      awaitDependencies(dependencies); // Aguarda as dependências serem resolvidas
+      awaitProcessorDependencies(processor.getDependencies());
 
-      return executeProcessor(processor, context); // Executa o processador
+      return executeProcessor(processor, context);
     });
   }
 
-  private void awaitDependencies(List<Class<? extends Processor>> dependencies) {
-    CompletableFuture<Void> dependenciesFuture = CompletableFuture.allOf(
+  private void awaitProcessorDependencies(List<Class<? extends Processor>> dependencies) {
+    CompletableFuture<Void> allDependencies = CompletableFuture.allOf(
         dependencies.stream()
             .map(this::getDependencyFuture)
             .toArray(CompletableFuture[]::new)
     );
-    dependenciesFuture.join(); // Bloqueia até que todas as dependências sejam resolvidas
+
+    allDependencies.join();
   }
 
   private CompletableFuture<Void> getDependencyFuture(Class<? extends Processor> dependency) {
-    IllegalStateException exception = new IllegalStateException("Dependência não encontrada: " + dependency.getSimpleName());
+    final CompletableFuture<Void> failedFuture = CompletableFuture.failedFuture(new IllegalStateException("Dependência não encontrada: " + dependency.getSimpleName()));
 
-    return dependencyFutures.getOrDefault(dependency, CompletableFuture.failedFuture(exception));
+    return dependencyFutures.getOrDefault(dependency, failedFuture);
   }
 
-  private Void executeProcessor(Processor processor, Context context) {
+  private Void executeProcessor(Processor processor, Context context) throws Exception {
     if (processor.supports(context)) {
       processor.doProcess(context);
-
     }
 
     return null;
+  }
+
+  private void handleExecutionError(Context context, Throwable e) {
+    if (errorHandler != null) {
+      errorHandler.handleError(context, e);
+
+    } else {
+      e.printStackTrace();
+    }
   }
 
 }

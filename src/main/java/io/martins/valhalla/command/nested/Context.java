@@ -66,11 +66,11 @@ public class Context extends HashMap<String, Object> {
     setProperty(RESULT, result);
   }
 
-  private <T> void setProperty(final String key, final Object value) {
+  public <T> void setProperty(final String key, final Object value) {
     this.put(key, value);
   }
 
-  private <T> Optional<T> getProperty(final String key, final Class<T> clazz) {
+  public <T> Optional<T> getProperty(final String key, final Class<T> clazz) {
     return Optional.ofNullable(get(key)).filter(clazz::isInstance).map(clazz::cast);
   }
 
